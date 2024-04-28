@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'shellwords'
+
+input = $stdin.read
+
+puts `echo #{Shellwords.escape(input)} | /Users/ttscoff/.asdf/shims/rdiscount`

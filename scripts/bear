@@ -1,0 +1,54 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'cgi'
+
+input = $stdin.read.force_encoding('utf-8')
+
+# Handle [[links]]
+input.gsub!(/\[\[(?<content>.*?)\]\]/) do
+  m = Regexp.last_match
+  # Test for link|title matchup
+  if m['content'] =~ /(?<link>.+)\|(?<title>.+)/
+    l = Regexp.last_match
+    title = l['title']
+    link = l['link']
+  else
+    title = m['content']
+    link = m['content']
+  end
+
+  # Test for note/header matchup
+  if link =~ %r{(?<page>.+)/(?<header>.+)}
+    l = Regexp.last_match
+    link = l['page']
+    header = l['header']
+  else
+    header = nil
+  end
+
+  header = header.nil? ? '' : "&header=#{CGI.escape(header).gsub(/\+/, '%20')}"
+
+  url = CGI.escape(link).gsub(/\+/, '%20')
+  callback = CGI.escape("bear://x-callback-url/create?title=#{url}").gsub(/\+/, '%20')
+  "[#{title}](bear://x-callback-url/open-note?title=#{url}#{header}&x-error=#{callback})"
+end
+
+# Handle ==highlight==
+input.gsub!(/==(.*?)==/, '<mark>\1</mark>')
+
+# Handle ~~deletion~~
+input.gsub!(/~~(.*?)~~/, '<del>\1</del>')
+
+# Handle ~underline~
+input.gsub!(/~(.*?)~/, '<span class="underline">\1</span>')
+
+# Handle tags, linking to tag pages in Bear
+input.gsub!(%r{(?!<#)#(?<tag>[^\s#,?.!]+)}i) do
+  m = Regexp.last_match
+  tag = CGI.escape(m['tag'])
+  %(<span class="mkstyledtag"><a href="bear://x-callback-url/open-tag?name=#{tag}">##{m['tag']}</a></span>)
+end
+puts '<!--marked style: bear-->'
+puts
+puts input

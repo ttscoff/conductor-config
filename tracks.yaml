@@ -1,0 +1,38 @@
+tracks:
+  - title: Preprocessing
+    condition: phase is pre
+    tracks:
+    - title: Bear Preview
+      condition: "text contains <!-- source: Bear.app -->"
+      sequence:
+        - script: bear
+      continue: true
+    - title: MindNode map
+      condition: filename ends with mindnode
+      script: mindnode
+    - title: Obsidian Markdown document
+      condition: tree contains .obsidian AND (extension is md OR extension is markdown)
+      script: obsidian-md-filter
+    - title: GitHub README
+      condition: filename is README.md
+      script: github-pre
+    - title: Blog post
+      condition: (path contains _drafts) OR (path contains _posts) AND yaml:comments
+      script: jekyll-pre
+    - title: Help docs
+      condition: path contains HelpDocs OR path contains Sites/dev/bunch OR path contains Code/nvultra-docs
+      script: jekyll-pre
+  - title: Processing
+    condition: phase is pro
+    tracks:
+    - condition: ext is taskpaper OR text contains @taskpaper
+      script: taskpaper
+    - condition: filename is README.md
+      script: github-pro
+    - condition: (path contains _drafts) OR (path contains _posts) AND yaml:comments
+      script: jekyll-pre
+    - title: Bunch Docs
+      command: kramdown
+    - title: nvUltra or Marked docs
+      condition: path contains HelpDocs OR path contains Code/nvultra-docs
+      command: multimarkdown

@@ -1,0 +1,642 @@
+#!/usr/bin/env ruby -W1
+# frozen_string_literal: true
+
+# Version 2 (02-03-2015)
+#
+# Example custom processor for use with Marked <http://markedapp.com> and Jekyll _posts
+# It's geared toward my personal set of plugins and tags, but you'll get the idea.
+#   It turns
+# {% img alignright /images/heythere.jpg 100 100 "Hey there" "hi" %}
+#   into
+# <img src="../images/heythere.jpg" alt="Hey there" class="alignright" title="hi" />
+#
+# replaces alignleft and alignright classes with appropriate style attribute
+# ---
+# Replaces {% gist XXXXX filename.rb %} with appropriate script tag
+#
+# Replace various other OctoPress, Jekyll and custom tags
+#
+# Processes final output with /usr/bin/kramdown (install kramdown as system gem: `sudo gem install kramdown`)
+#
+# Be sure to run *without* stripping YAML headers in Marked Behavior preferences.
+
+require 'rubygems'
+require 'shellwords'
+require 'kramdown'
+require 'uri'
+require 'cgi'
+require 'erb'
+require 'logger'
+require 'nokogiri/nokogiri'
+
+@logger = Logger.new(File.expand_path('~/logs/jekyllpre.log'))
+
+if ARGV[0] == 'testing'
+  warn 'Just a test'
+  Process.exit 0
+end
+
+def class_exists?(class_name)
+  klass = Module.const_get(class_name)
+  klass.is_a?(Class)
+rescue NameError
+  false
+end
+
+if class_exists? 'Encoding'
+  Encoding.default_external = Encoding::UTF_8 if Encoding.respond_to?('default_external')
+  Encoding.default_internal = Encoding::UTF_8 if Encoding.respond_to?('default_internal')
+end
+
+begin
+  content = $stdin.read.force_encoding('utf-8')
+rescue StandardError
+  content = $stdin.read
+end
+
+# Title: Keyboard markup tag
+# Author: Brett Terpstra <https://brettterpstra.com>
+# Description: Apply HTML markup for keyboard shortcuts
+#
+# See Readme for syntax help and configuration details.
+#
+# Configuration options:
+#
+#   kbd:
+#     use_modifier_symbols: true
+#     use_key_symbols: true
+#     use_plus_sign: true
+#
+# example:
+#
+# Input:
+#
+#      {% kbd ^~@r %}
+#
+# Output:
+#      <span class="keycombo" title="Control-Option-Command-R">
+#          <kbd class="mod">&#8963;</kbd>+<kbd class="mod">&#8997;</kbd>+<kbd class="mod">&#8984;</kbd>+<kbd class="key">R</kbd>
+#      </span>
+
+# String Helpers
+class ::String
+  # Convert natural language combo to shorcut symbols
+  # ctrl-cmd-f => ^@f
+  def clean_combo
+    # Only remove hyphens preced and followed by non-space character
+    # to avoid removing hyphen from 'option-shift--' or 'command -'
+    gsub!(/(?<=\S)-(?=\S)/, ' ')
+    gsub!(/\b(comm(and)?|cmd|clover)\b/i, '@')
+    gsub!(/\b(cont(rol)?|ctl|ctrl)\b/i, '^')
+    gsub!(/\b(opt(ion)?|alt)\b/i, '~')
+    gsub!(/\bshift\b/i, '$')
+    gsub!(/\b(func(tion)?|fn)\b/i, '*')
+    self
+  end
+
+  # For combos containing shift key, use upper symbol for keys with two characters
+  # Shift-/ should be Shift-?
+  def lower_to_upper
+    doubles = [
+      [',', '<'],
+      ['.', '>'],
+      ['/', '?'],
+      [';', ':'],
+      ["'", '"'],
+      ['[', '{'],
+      [']', '}'],
+      ['\\', '|'],
+      ['-', '_'],
+      ['=', '+']
+    ]
+
+    lowers = []
+    uppers = []
+    doubles.each do |dbl|
+      lowers.push(dbl[0])
+      uppers.push(dbl[1])
+    end
+
+    lowers.include?(self) ? uppers[lowers.index(self)] : self
+  end
+
+  # Detect combos using upper character of double
+  # Command-? should be Command-Shift-?
+  def upper?
+    uppers = %w(< > ? : " { } | ! @ # $ % ^ & * \( \) _ +)
+    uppers.include?(self)
+  end
+
+  def clean_combo!
+    replace clean_combo
+  end
+
+  # Convert modifier shortcut symbols to unicode
+  def to_mod
+    characters = {
+      '^' => '⌃',
+      '~' => '⌥',
+      '$' => '⇧',
+      '@' => '⌘',
+      '*' => 'Fn'
+    }
+    characters.key?(self) ? characters[self] : self
+  end
+
+  # Convert unicode modifiers to HTML entities
+  def mod_to_ent(use_symbol)
+    entities = {
+      '⌃' => '&#8963;',
+      '⌥' => '&#8997;',
+      '⇧' => '&#8679;',
+      '⌘' => '&#8984;',
+      'Fn' => 'Fn'
+    }
+    names = {
+      '⌃' => 'Control',
+      '⌥' => 'Option',
+      '⇧' => 'Shift',
+      '⌘' => 'Command',
+      'Fn' => 'Function'
+    }
+    if entities.key?(self)
+      use_symbol ? entities[self] : names[self]
+    else
+      self
+    end
+  end
+
+  # Spell out modifier symbols for titles
+  def mod_to_title
+    entities = {
+      '⌃' => 'Control',
+      '⌥' => 'Option',
+      '⇧' => 'Shift',
+      '⌘' => 'Command',
+      'Fn' => 'Function'
+    }
+    entities.key?(self) ? entities[self] : self
+  end
+
+  # Spell out some characters that might be
+  # indiscernable or easily confused
+  def clarify_characters
+    unclear_characters = {
+      ',' => 'Comma (,)',
+      '.' => 'Period (.)',
+      ';' => 'Semicolon (;)',
+      ':' => 'Colon (:)',
+      '`' => 'Backtick (`)',
+      '-' => 'Minus Sign (-)',
+      '+' => 'Plus Sign (+)',
+      '=' => 'Equals Sign (=)',
+      '_' => 'Underscore (_)',
+      '~' => 'Tilde (~)'
+    }
+    unclear_characters.key?(self) ? unclear_characters[self] : self
+  end
+
+  def name_to_ent(use_symbol)
+    k =
+      case strip.downcase
+      when /^f(\d{1,2})$/
+        num = Regexp.last_match(1)
+        ["F#{num}", "F#{num}", "F#{num} Key"]
+      when /^apple$/
+        ['Apple', '&#63743;', 'Apple menu']
+      when /^tab$/
+        ['', '&#8677;', 'Tab Key']
+      when /^caps(lock)?$/
+        ['Caps Lock', '&#8682;', 'Caps Lock Key']
+      when /^eject$/
+        ['Eject', '&#9167;', 'Eject Key']
+      when /^return$/
+        ['Return', '&#9166;', 'Return Key']
+      when /^enter$/
+        ['Enter', '&#8996;', 'Enter (Fn Return) Key']
+      when /^(del(ete)?|back(space)?)$/
+        ['Del', '&#9003;', 'Delete']
+      when /^fwddel(ete)?$/
+        ['Fwd Del', '&#8998;', 'Forward Delete (Fn Delete)']
+      when /^(esc(ape)?)$/
+        ['Esc', '&#9099;', 'Escape Key']
+      when /^right?$/
+        ['Right Arrow', '&#8594;', 'Right Arrow Key']
+      when /^left$/
+        ['Left Arrow', '&#8592;', 'Left Arrow Key']
+      when /^up?$/
+        ['Up Arrow', '&#8593;', 'Up Arrow Key']
+      when /^down$/
+        ['Down Arrow', '&#8595;', 'Down Arrow Key']
+      when /^pgup$/
+        ['PgUp', '&#8670;', 'Page Up Key']
+      when /^pgdn$/
+        ['PgDn', '&#8671;', 'Page Down Key']
+      when /^home$/
+        ['Home', '&#8598;', 'Home Key']
+      when /^end$/
+        ['End', '&#8600;', 'End Key']
+      when /^click$/
+        ['click', '<i class="fas fa-mouse-pointer"></i>', 'left click']
+      else
+        [self, self, capitalize]
+      end
+    use_symbol ? [k[1], k[2]] : [k[0], k[2]]
+  end
+end
+
+class KBDTag
+  @combos = nil
+
+  def initialize(markup)
+    @combos = []
+
+    markup.split(%r{ / }).each do |combo|
+      mods = []
+      key = ''
+      combo.clean_combo!
+      combo.strip.split(//).each do |char|
+        next if char == ' '
+
+        case char
+        when /[⌃⇧⌥⌘]/
+          mods.push(char)
+        when /[*\^$@~]/
+          mods.push(char.to_mod)
+        else
+          key += char
+        end
+      end
+      mods = sort_mods(mods)
+      title = ''
+      if key.length == 1
+        if mods.empty? && (key =~ /[A-Z]/ || key.upper?)
+          # If there are no modifiers, convert uppercase letter
+          # to "Shift-[Uppercase Letter]", uppercase lowercase keys
+          mods.push('$'.to_mod)
+        end
+        key = key.lower_to_upper if mods.include?('$'.to_mod)
+        key.upcase!
+        title = key.clarify_characters
+      elsif mods.include?('$'.to_mod)
+        key = key.lower_to_upper
+      end
+      key.gsub!(/"/, '&quot;')
+      @combos.push({ mods: mods, key: key, title: title })
+    end
+  end
+
+  def sort_mods(mods)
+    order = ['Fn', '⌃', '⌥', '⇧', '⌘']
+    mods.uniq!
+    mods.sort { |a, b| order.index(a) < order.index(b) ? -1 : 1 }
+  end
+
+  def render()
+    use_key_symbol = true
+    use_mod_symbol = true
+    use_plus = false
+
+    output = []
+
+    @combos.each do |combo|
+      next unless combo[:mods].length || combo[:key].length
+
+      kbds = []
+      title = []
+      combo[:mods].each do |mod|
+        mod_class = use_mod_symbol ? 'mod symbol' : 'mod'
+        kbds.push(%(<kbd class="#{mod_class}">#{mod.mod_to_ent(use_mod_symbol)}</kbd>))
+        title.push(mod.mod_to_title)
+      end
+      unless combo[:key].empty?
+        key, keytitle = combo[:key].name_to_ent(use_key_symbol)
+        key_class = use_key_symbol ? 'key symbol' : 'key'
+        keytitle = keytitle.clarify_characters if keytitle.length == 1
+        kbds.push(%(<kbd class="#{key_class}">#{key}</kbd>))
+        title.push(keytitle)
+      end
+      kbd = if use_mod_symbol
+              use_plus ? kbds.join('+') : kbds.join
+            else
+              kbds.join('-')
+            end
+      span_class = "keycombo #{use_mod_symbol && !use_plus ? 'combined' : 'separated'}"
+      kbd = %(<span class="#{span_class}" title="#{title.join('-')}">#{kbd}</span>)
+      output.push(kbd)
+    end
+
+    output.join('/')
+  end
+end
+
+class String
+  def inject_meta(string)
+    keys = `echo #{Shellwords.escape(self)}|multimarkdown -m`.strip
+    if keys.empty?
+      "#{string}\n\n#{self}"
+    else
+      "#{string}\n#{self}"
+    end
+  end
+
+  def inject_meta!(string)
+    replace inject_meta(string)
+  end
+end
+
+def no_custom(reason)
+  @logger.info("NO CUSTOM: #{reason}")
+  puts 'NOCUSTOM'
+  Process.exit
+end
+
+def process_docs(content)
+  $LOAD_PATH.unshift '/Users/ttscoff/Desktop/Code/nvultra-docs/lib'
+  require 'helpdocs'
+
+  content = content.render_liquid('marked')
+  content = Utils.remove_todos(content)
+  if ENV['MARKED_ORIGIN'] =~ /nvultra/
+    content.inject_meta!('Marked CSS: nvUltra')
+  elsif ENV['MARKED_ORIGIN'] =~ /HelpDocs/
+    title = File.basename(ENV['MARKED_PATH'], '.md').gsub(/_/, ' ')
+    content.sub!(/<%= @title %>/, title)
+    content.inject_meta!('Marked CSS: Marked Help')
+  end
+  puts content
+end
+
+def process_jekyll(parts, style = 'BrettTerpstra.com 2020')
+  # full path to image folder
+  if style =~ /^Bunch/
+    full_image_path = '/Users/ttscoff/Sites/dev/bunch/'
+    base_url = '/Users/ttscoff/Sites/dev/bunch'
+  else
+    full_image_path = '/Users/ttscoff/Sites/dev/bt/source/'
+  end
+  # Read YAML headers as needed before cutting them out
+  post_title = parts[1].match(/^title:\s+(!\s*)?["']?(.*?)["']?\s*$/i)
+  post_title = post_title.nil? ? '' : post_title[2].strip
+
+  if ENV['MARKED_PHASE'] == 'PREPROCESS'
+    out = <<~EOYAML
+      ---
+      marked css: #{style}
+      #{parts[1].strip}
+      ---
+      #{parts[2..].join('---').strip}
+
+    EOYAML
+    puts out
+    Process.exit 0
+  end
+
+  no_custom('no post title') if post_title == ''
+  # Remove YAML
+  # content.sub!(/^---.*?---\s*$/m,'')
+  content = parts[2..].join('---')
+
+  # Fenced code
+  content.gsub!(/^(\s*)```bunch/, '\1```bash')
+  content.gsub!(/^([ \t]*)```(\w+)?\s*(.*?)\1```/m) do
+    m = Regexp.last_match
+    spacer = "#{m[1]}    "
+    m[3].split(/\n/).map { |l| spacer + l.strip }.join("\n")
+  end
+
+  if style =~ /^Bunch/
+    config = YAML.safe_load(IO.read('/Users/ttscoff/Sites/dev/bunch/_config.yml'))
+    content.gsub!(%r{\{\{\s*site\.baseurl(?:.*?)\s*\}\}/(.*?)/?(#.*?)?\)}, File.join(base_url, '\1.md\2)'))
+
+    content.gsub!(/\{\{\s*site\.(.*?)(?: .*?)?\s*\}\}/) do
+      m = Regexp.last_match
+      if config&.key?(m[1])
+        config[m[1]]
+      else
+        ''
+      end
+    end
+  end
+  content.gsub!(/\{\{\s*site\.baseurl\s*\}\}/,
+                style == 'Bunch' ? '/Users/ttscoff/Sites/dev/bunch' : full_image_path.sub(%r{/$}, ''))
+
+  # Replace include tags
+  content.gsub!(/\{%\s*include (\S+)\s*%\}/) do
+    m = Regexp.last_match
+    file = File.join(full_image_path, '_includes', m[1])
+    if File.exist?(file)
+      include_content = IO.read(file)
+      include_content
+    else
+      "\n\n`Missing file: #{file}`\n\n"
+    end
+  end
+
+  # Replace kbd tags
+  content.gsub!(/\{%\s*kbd (.*?)\s*%\}/) do
+    m = Regexp.last_match
+    k = KBDTag.new(m[1])
+    k.render
+  end
+
+  # Replace Gif tags
+  content.gsub!(/\{% (hover)?gif (\S+) (".*?" ){,2}%\}/) do
+    m = Regexp.last_match
+    hover = m[1] ? 'hover' : 'animated'
+    image = File.join(full_image_path, m[2])
+    caption = if m[3]
+                "<figcaption>#{m[3].strip.sub(/^"(.*?)"$/, '\1')}</figcaption>"
+              else
+                ''
+              end
+    if image =~ /\.mp4/
+      %(<figure class="#{hover}_vid_frame" tabindex="0">
+        <video muted loop playsinline>
+          <source src="#{image}" type="video/mp4">
+        </video>#{caption}</figure>)
+    else
+      %(<figure class="#{hover}_gif_frame" tabindex="0">
+        <img class="animated_gif" src="#{image}">#{caption}</figure>)
+    end
+  end
+
+  # Update image urls to point to absolute file path
+  content.gsub!(%r{([("])/uploads/(\d+/.*?)([ )"])}, "\\1#{full_image_path}\\2\\3")
+
+  # Process image Liquid tags
+  content.gsub!(/\{% img (.*?) %\}/) do |img|
+    if img =~ %r{\{% img (\S.*\s+)?(https?://\S+|/\S+|\S+/\s+)(\s+\d+\s+\d+)?(\s+.+)? %\}}i
+      m = Regexp.last_match
+      classes = m[1].strip if m[1]
+      src = m[1].sub(%r{^/bunch}, '')
+      # size = $3
+      title = m[4]
+
+      if /(?:"|')([^"']+)?(?:"|')\s+(?:"|')([^"']+)?(?:"|')/ =~ title
+        t = Regexp.last_match
+        title  = t[1]
+        alt    = t[2]
+      elsif title
+        alt    = title.gsub!(/"/, '&#34;')
+      end
+      classes&.gsub!(/"/, '')
+    end
+
+    cssstyle = %( style="float:right;margin:0 0 10px 10px") if classes =~ /alignright/
+    cssstyle = %( style="float:left;margin:0 10px 10px 0") if classes =~ /alignleft/
+
+    %(<img src="#{File.join(full_image_path, src)}" alt="#{alt}" class="#{classes}" title="#{title}"#{cssstyle} />)
+  end
+
+  # Process gist tags
+  content.gsub!(/\{% gist(.*?) %\}/) do |gist|
+    gistparts = gist.match(/\{% gist (\S+) (.*?)?%\}/)
+
+    if gistparts
+      gist_id = gistparts[1].strip
+      file = gistparts[2].nil? ? '' : "?file-#{gistparts[2].strip}"
+      %(<script src="https://gist.github.com/#{gist_id}.js#{file}"></script>)
+    else
+      ''
+    end
+  end
+
+  # Replace YouTube tags with a placeholder block
+  # <http://brettterpstra.com/2013/01/20/jekyll-tag-plugin-for-responsive-youtube-video-embeds/>
+  content.gsub!(/\{% youtube (\S+) ((\d+) (\d+) )?(".*?" )?%\}/) do
+    # id = $1
+    # width, height = $2.nil? ? [640, 480] : [$3, $4] # width:#{width}px;height:#{height}px;
+    cssstyle = 'position:relative;padding-bottom:56.25%;padding-top:30px;height:0;overflow:hidden;background:#666;'
+    %(<div class="bt-video-container" style="#{cssstyle}">
+<h3 style="text-align:center;margin-top:25%;">YouTube Video</h3></div>)
+  end
+
+  # HTML5 semantic pullquote plugin
+  content.gsub!(/\{% pullquote(.*?) %\}(.*?)\{% endpullquote %\}/m) do
+    m = Regexp.last_match
+    quoteblock = m[2]
+    if quoteblock =~ /\{"\s*(.+?)\s*"\}/m
+      quote = m[1]
+      "<span class='pullquote' data-pullquote='#{quote}'>#{quoteblock.gsub(/\{"\s*|\s*"\}/, '')}</span>"
+    else
+      quoteblock
+    end
+  end
+
+  # Custom downloads manager plugin shiv
+  case style
+  when /^Bunch/
+    content.gsub!(/\{%\s*(download(beta)?(button)?)(.*?)\s*%\}/) do
+      m = Regexp.last_match
+      button = true if m[3]
+      text = m[4] ? m[4].strip : 'Download Bunch vX.X.X'
+      %(<a#{button ? ' class="download button"' : ''} href="#"><i class="fa fa-download"></i> #{text}</a>)
+    end
+  else
+    content.gsub!(/\{% download(.*?) %\}/, %(<div class="download"><h4>A download</h4>
+<p class="dl_icon"><a href="#"><img src="/Users/ttscoff/Sites/dev/bt/source/images/serviceicon.jpg"></a></p>
+<div class="dl_body"><p class="dl_link"><a href="#">Download this download</a></p>
+<p class="dl_description">Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod
+ tempor incididunt ut labore et dolore magna aliqua.</p><p class="dl_updated">Updated Today</p>
+ <p class="dl_info"><a href="#" title="More information on this download">More info&hellip;</a></p></div></div>))
+  end
+
+  # remove remaining {{ liquid includes }}
+  content.gsub!(/\{\{\s*(.*?)\s*\}\}/, '`\1`')
+  content.gsub!(/\{%\s*(.*?)\s*%\}/, '`\1`')
+
+  page_title = style =~ /^Bunch/ ? '' : "## #{post_title}\n\n"
+
+  content = <<~EOCONTENT
+    #{page_title}#{content}
+
+    #{script}
+  EOCONTENT
+
+  nav = ''
+  if style =~ /^Bunch/ # && ENV['BASE'] =~ /#{ENV['MARKED_ORIGIN'].sub(/\/$/, '')}/
+    exts = ['*.md', '*.markdown']
+    files = Dir.glob(exts.map { |ext| File.join(base_url, ext) })
+    files.concat(Dir.glob(exts.map { |ext| File.join(base_url, 'docs', '**', ext) }))
+    pages = []
+    files.each do |file|
+      path = file.sub(/\.(md|markdown)$/, '').sub(%r{^.*?bunch/}, '').split(%r{/})
+      page = path.pop
+      page_path = %(<span class="parent">#{path.map { |x| x[0..2] }.join('/')}/</span><span class="page">#{page}</span>)
+      pages.push(%(<li class="nav-list-item"><a class="nav-list-link" href="#{file}">#{page_path}</a></li>))
+    end
+    nav = %(<div class="side-bar">
+    <nav id="site-nav" class="site-nav"><ul class="nav-list">
+    #{pages.join("\n")}
+    </ul></nav>
+    </div>
+    )
+  end
+  script = ''
+
+  if style =~ /^Bunch/
+    script = %(
+
+<script src="/Users/ttscoff/Library/Application%20Support/Marked%202/Custom%20CSS/Bunch.js?#{rand(10_000)}"></script>
+<script src="https://kit.fontawesome.com/fb6c61417e.js" crossorigin="anonymous"></script>\n)
+  end
+
+  out = Kramdown::Document.new(content).to_html
+  out = %(<div id="main-content" class="main-content">\n\n#{out}\n\n</div>\n#{nav}\n#{script}) if style =~ /^Bunch/
+  $stdout.puts out
+end
+
+begin
+  ext = ENV['MARKED_EXT'].downcase || 'md'
+  if ENV['MARKED_PATH'] =~ %r{/Sites/dev/bunch/marked_index.txt}
+    if ENV['MARKED_PHASE'] == 'PREPROCESS'
+      # warn `env`
+      puts 'BUNCH DOCS INDEX 2'
+      warn.gsub!(/(<!-- include.*?)\n---.*?\n---/m, '\1')
+      content.gsub!(/\{\{ site.baseurl \}\}/, '/Users/ttscoff/Sites/dev')
+      content.gsub!(/\{:toc\}/, '')
+      content.gsub!(/```bunch/, '```')
+      puts content
+    else
+      $stdout.puts Kramdown::Document.new(content).to_html
+    end
+    Process.exit 0
+  end
+
+  parts = content.split(/^---\s*$/)
+
+  if ENV['MARKED_ORIGIN'] =~ %r{(bunch|_(drafts|posts))/} && parts.length > 2
+    warn('Looks like a Jekyll post')
+    if ENV['MARKED_ORIGIN'] =~ /bunch/
+      warn('Looks like Bunch docs')
+      process_jekyll(parts, 'Bunch')
+    else
+      warn('Looks like a BT.com post')
+      process_jekyll(parts)
+    end
+  else
+    no_custom('wrong extension') if ext.downcase != 'md'
+
+    warn('Not a Jekyll post')
+    puts ENV['MARKED_ORIGIN']
+    if ENV['MARKED_ORIGIN'] =~ /(docs|help)/i && ENV['MARKED_PHASE'] == 'PREPROCESS'
+      warn('Looks like help docs')
+      process_docs(content)
+    elsif ENV['MARKED_PHASE'] == 'PREPROCESS'
+      source = File.dirname(ENV['MARKED_PATH'])
+      puts content.gsub(/\[\[(.*?)\]\]/) do
+        m = Regexp.last_match
+        "[#{m[1]}](#{File.join(source, ERB::Util.url_encode(m[1]).sub(/(\.md)?$/, '.md'))})"
+      end
+    else
+      warn('Not help docs either...')
+      puts 'NOCUSTOM'
+    end
+  end
+rescue StandardError => e
+  puts 'NOCUSTOM'
+  warn(e)
+  warn(e.backtrace)
+  @logger.fatal(e)
+end

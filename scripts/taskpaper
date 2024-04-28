@@ -1,0 +1,103 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'kramdown'
+
+def process_taskpaper(content)
+  header = content.scan(/Format: .*$/) || []
+  output = ''
+  prevlevel = 0
+  begin
+    content.split("\n").each do |line|
+      if line =~ /^(\t+)?(.*?):(\s.*)?$/
+        m = Regexp.last_match
+        tabs = m[1]
+        project = m[2]
+        if tabs.nil?
+          output += "\n## #{project} ##\n\n"
+          prevlevel = 0
+        else
+          output += "#{tabs.gsub(/^\t/, '')}* **#{project.gsub(/^\s*-\s*/, '')}**{:.project}\n"
+          prevlevel = tabs.length
+        end
+      elsif line =~ /^(\t+)?- (.*)$/
+        m = Regexp.last_match
+        task = m[2]
+        tabs = m[1].nil? ? '' : m[1]
+        task.gsub!(/(@[^ \n\r(]+)((\()([^)]+)(\)))?/, '*\1*{:.tag}')
+
+        task = if task =~ /@done/
+                 "- [x] <del>#{task}</del>"
+               else
+                 "- [ ] #{task}"
+               end
+        if tabs.length - prevlevel > 1
+          tabs = "\t"
+          prevlevel.times { tabs += "\t" }
+        end
+        tabs = '' if prevlevel.zero? && tabs.length.positive?
+        output += "#{tabs.gsub(/^\t/, '')}#{task.strip}\n"
+        prevlevel = tabs.length
+      else
+        next if line =~ /^\s*$/
+
+        tabs = ''
+        (prevlevel - 1).times { tabs += "\t" } unless prevlevel.zero?
+        output += "- #{tabs}*#{line.strip}*{:.note}\n"
+      end
+    end
+    final = header.nil? ? '' : "#{header.join("\n")}\n\n"
+    final.gsub!(/\|/, '\|')
+    style = <<~EOSTYLE
+      <style>
+      li.project {
+      list-style: none;
+      font-size: 1.2rem;
+      }
+      li.project::before {
+      content: '>';
+      color: #aaa;
+      margin-left: -1.25rem;
+      position: absolute; }
+      del {
+      color: #aaa; }
+      .tag strong {
+      font-weight: normal;
+      color: #555 }
+      .tag a {
+      text-decoration: none;
+      border: none;
+      color:#777 }
+      li.note {
+      list-style: none;
+      text-indent: 2em;
+      font-size: .85em }
+      </style>
+
+    EOSTYLE
+
+    final += style
+    # title = File.basename(ENV['MARKED_PATH'],'.taskpaper') || "TaskPaper Preview"
+    final += output
+
+    final.gsub!(/\[\[(.*?)\]\]/) do
+      note = Regexp.last_match(1)
+      escaped = ERB::Util.url_encode(note)
+      %([#{note}](nvalt://find/#{escaped}))
+    end
+
+    script = <<~ENDSCRIPT
+      <script>(function($){
+        $('em.note').closest('li').addClass('note');
+        $('strong.project').closest('li').addClass('project');
+      })(jQuery);</script>
+    ENDSCRIPT
+    Kramdown::Document.new(final).to_html + "\n\n#{script}"
+  rescue StandardError => e
+    warn e
+    warn e.backtrace
+    raise
+  end
+end
+
+puts process_taskpaper($stdin.read.force_encoding('utf-8'))
