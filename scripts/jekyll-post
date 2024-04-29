@@ -1,0 +1,23 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+def class_exists?(class_name)
+  klass = Module.const_get(class_name)
+  klass.is_a?(Class)
+rescue NameError
+  false
+end
+
+if class_exists? 'Encoding'
+  Encoding.default_external = Encoding::UTF_8 if Encoding.respond_to?('default_external')
+  Encoding.default_internal = Encoding::UTF_8 if Encoding.respond_to?('default_internal')
+end
+
+begin
+  content = $stdin.read.force_encoding('utf-8')
+rescue StandardError
+  content = $stdin.read
+end
+
+$stdout.puts Kramdown::Document.new(content).to_html
+
