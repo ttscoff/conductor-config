@@ -25,9 +25,11 @@ tracks:
   - title: Processing
     condition: phase is pro
     tracks:
-    - condition: ext is taskpaper OR text contains @taskpaper
+    - title: TaskPaper file
+      condition: ext is taskpaper OR text contains @taskpaper
       script: taskpaper
-    - condition: filename is README.md
+    - title: GitHub README
+      condition: filename is README.md
       script: github-pro
     - title: Blog post
       condition: path contains _drafts OR path contains _posts
