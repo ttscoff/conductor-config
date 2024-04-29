@@ -80,7 +80,7 @@ def process_docs(content)
   puts content
 end
 
-if ENV['MARKED_ORIGIN'] =~ /(docs|help)/i
+if ENV['MARKED_ORIGIN'] =~ /(HelpDocs|nvultra)/i
   warn('Looks like help docs')
   process_docs(content)
 else
@@ -89,6 +89,7 @@ else
     title = Regexp.last_match(1)
     "[#{title}](#{File.join(source, ERB::Util.url_encode(title).sub(/(\.md)?$/, '.md'))})"
   end
-  content.sub!(/^---\n/m, "---\nmarked style: brettterpstra-2023\n")
+  style = ENV['MARKED_ORIGIN'] =~ %r{/bunch/} ? 'Bunch' : 'brettterpstra-2023'
+  content.sub!(/^---\n/m, "---\nmarked style: #{style}\n")
   puts content
 end

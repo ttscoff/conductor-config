@@ -497,8 +497,8 @@ def process_jekyll(parts, style = 'Bunch')
   end
 
   # remove remaining {{ liquid includes }}
-  content.gsub!(/\{\{\s*(.*?)\s*\}\}/, '`\1`')
-  content.gsub!(/\{%\s*(.*?)\s*%\}/, '`\1`')
+  content.gsub!(/\{\{\s*(.*?)\s*\}\}/, '')
+  content.gsub!(/\{%\s*(.*?)\s*%\}/, '')
 
   nav = ''
 

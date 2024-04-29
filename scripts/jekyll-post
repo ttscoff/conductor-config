@@ -487,10 +487,9 @@ def process_jekyll(parts, style = 'brettterpstra-2023')
 tempor incididunt ut labore et dolore magna aliqua.</p><p class="dl_updated">Updated Today</p>
 <p class="dl_info"><a href="#" title="More information on this download">More info&hellip;</a></p></div></div>))
 
-
   # remove remaining {{ liquid includes }}
-  content.gsub!(/\{\{\s*(.*?)\s*\}\}/, '`\1`')
-  content.gsub!(/\{%\s*(.*?)\s*%\}/, '`\1`')
+  content.gsub!(/\{\{\s*(.*?)\s*\}\}/, '')
+  content.gsub!(/\{%\s*(.*?)\s*%\}/, '')
 
   page_title = "## #{post_title}\n\n"
 

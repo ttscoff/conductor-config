@@ -17,7 +17,7 @@ tracks:
       condition: filename is README.md
       script: github-pre
     - title: Blog post or Bunch docs
-      condition: path contains _drafts OR path contains _posts OR path contains /bunch/
+      condition: (path contains _drafts OR path contains _posts OR path contains /bunch/) AND has yaml
       script: jekyll-pre
     - title: Help docs
       condition: path contains HelpDocs OR path contains Sites/dev/bunch OR path contains Code/nvultra-docs
@@ -32,10 +32,10 @@ tracks:
       condition: filename is README.md
       script: github-pro
     - title: Blog post
-      condition: path contains _drafts OR path contains _posts
+      condition: (path contains _drafts OR path contains _posts) AND has yaml
       script: jekyll-post
     - title: Bunch docs
-      condition: extension is md AND path contains /bunch/
+      condition: extension is md AND path contains /bunch/ AND has yaml
       script: bunch-post
     - title: nvUltra or Marked docs
       condition: path contains HelpDocs OR path contains Code/nvultra-docs
