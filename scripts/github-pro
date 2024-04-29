@@ -3,6 +3,6 @@
 
 require 'shellwords'
 
-input = $stdin.read
+input = $stdin.read.force_encoding('utf-8')
 
 puts `echo #{Shellwords.escape(input)} | /Users/ttscoff/.asdf/shims/rdiscount`

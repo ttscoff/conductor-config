@@ -351,9 +351,10 @@ def no_custom(reason)
   Process.exit
 end
 
-def process_jekyll(parts, style = 'brettterpstra-2023')
+def process_jekyll(parts, style = 'Bunch')
   # full path to image folder
-  full_image_path = '/Users/ttscoff/Sites/dev/bt/source/'
+  full_image_path = '/Users/ttscoff/Sites/dev/bunch/'
+  base_url = '/Users/ttscoff/Sites/dev/bunch'
   # Read YAML headers as needed before cutting them out
   post_title = parts[1].match(/^title:\s+(!\s*)?["']?(.*?)["']?\s*$/i)
   post_title = post_title.nil? ? '' : post_title[2].strip
@@ -371,7 +372,18 @@ def process_jekyll(parts, style = 'brettterpstra-2023')
     m[3].split(/\n/).map { |l| spacer + l.strip }.join("\n")
   end
 
-  content.gsub!(/\{\{\s*site\.baseurl\s*\}\}/, full_image_path.sub(%r{/$}, ''))
+  config = YAML.safe_load(IO.read('/Users/ttscoff/Sites/dev/bunch/_config.yml'))
+  content.gsub!(%r{\{\{\s*site\.baseurl(?:.*?)\s*\}\}/(.*?)/?(#.*?)?\)}, File.join(base_url, '\1.md\2)'))
+
+  content.gsub!(/\{\{\s*site\.(.*?)(?: .*?)?\s*\}\}/) do
+    m = Regexp.last_match
+    if config&.key?(m[1])
+      config[m[1]]
+    else
+      ''
+    end
+  end
+  content.gsub!(/\{\{\s*site\.baseurl\s*\}\}/, '/Users/ttscoff/Sites/dev/bunch')
 
   # Replace include tags
   content.gsub!(/\{%\s*include (\S+)\s*%\}/) do
@@ -421,7 +433,7 @@ def process_jekyll(parts, style = 'brettterpstra-2023')
     if img =~ %r{\{% img (\S.*\s+)?(https?://\S+|/\S+|\S+/\s+)(\s+\d+\s+\d+)?(\s+.+)? %\}}i
       m = Regexp.last_match
       classes = m[1].strip if m[1]
-      src = m[2].sub(%r{^/bunch}, '')
+      src = m[1].sub(%r{^/bunch}, '')
       # size = $3
       title = m[4]
 
@@ -435,10 +447,8 @@ def process_jekyll(parts, style = 'brettterpstra-2023')
       classes&.gsub!(/"/, '')
     end
 
-    cssstyle = ''
     cssstyle = %( style="float:right;margin:0 0 10px 10px") if classes =~ /alignright/
     cssstyle = %( style="float:left;margin:0 10px 10px 0") if classes =~ /alignleft/
-    cssstyle = %( style="width:100%;height:auto") if classes =~ /aligncenter/
 
     %(<img src="#{File.join(full_image_path, src)}" alt="#{alt}" class="#{classes}" title="#{title}"#{cssstyle} />)
   end
@@ -479,43 +489,51 @@ def process_jekyll(parts, style = 'brettterpstra-2023')
   end
 
   # Custom downloads manager plugin shiv
-
-  content.gsub!(/\{% download(.*?) %\}/, %(<div class="download"><h4>A download</h4>
-<p class="dl_icon"><a href="#"><img src="/Users/ttscoff/Sites/dev/bt/source/images/serviceicon.jpg"></a></p>
-<div class="dl_body"><p class="dl_link"><a href="#">Download this download</a></p>
-<p class="dl_description">Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod
-tempor incididunt ut labore et dolore magna aliqua.</p><p class="dl_updated">Updated Today</p>
-<p class="dl_info"><a href="#" title="More information on this download">More info&hellip;</a></p></div></div>))
-
+  content.gsub!(/\{%\s*(download(beta)?(button)?)(.*?)\s*%\}/) do
+    m = Regexp.last_match
+    button = true if m[3]
+    text = m[4] ? m[4].strip : 'Download Bunch vX.X.X'
+    %(<a#{button ? ' class="download button"' : ''} href="#"><i class="fa fa-download"></i> #{text}</a>)
+  end
 
   # remove remaining {{ liquid includes }}
   content.gsub!(/\{\{\s*(.*?)\s*\}\}/, '`\1`')
   content.gsub!(/\{%\s*(.*?)\s*%\}/, '`\1`')
 
-  page_title = "## #{post_title}\n\n"
+  nav = ''
 
-  content = <<~EOCONTENT
-    #{page_title}#{content}
-  EOCONTENT
+  exts = ['*.md', '*.markdown']
+  files = Dir.glob(exts.map { |ext| File.join(base_url, ext) })
+  files.concat(Dir.glob(exts.map { |ext| File.join(base_url, 'docs', '**', ext) }))
+  pages = []
+  files.each do |file|
+    path = file.sub(/\.(md|markdown)$/, '').sub(%r{^.*?bunch/}, '').split(%r{/})
+    page = path.pop
+    page_path = %(<span class="parent">#{path.map { |x| x[0..2] }.join('/')}/</span><span class="page">#{page}</span>)
+    pages.push(%(<li class="nav-list-item"><a class="nav-list-link" href="#{file}">#{page_path}</a></li>))
+  end
+  nav = %(<div class="side-bar">
+  <nav id="site-nav" class="site-nav"><ul class="nav-list">
+  #{pages.join("\n")}
+  </ul></nav>
+  </div>
+  )
+  script = ''
 
-  puts Kramdown::Document.new(content).to_html
+  script = %(
+
+<script src="/Users/ttscoff/Library/Application%20Support/Marked%202/Custom%20CSS/Bunch.js?#{rand(10_000)}"></script>
+<script src="https://kit.fontawesome.com/fb6c61417e.js" crossorigin="anonymous"></script>
+)
+
+  out = Kramdown::Document.new(content).to_html
+  out = %(<div id="main-content" class="main-content">\n\n#{out}\n\n</div>\n#{nav}\n#{script})
+  $stdout.puts out
 end
 
 begin
-  ext = ENV['MARKED_EXT'].downcase || 'md'
-
   parts = content.split(/^---\s*$/)
-
-  if ENV['MARKED_ORIGIN'] =~ %r{_(drafts|posts)/} && parts.length > 2
-    warn('Looks like a BT.com post')
-    parts[1] << "\nmarked style: brettterpstra-2023"
-    process_jekyll(parts)
-  else
-    no_custom('wrong extension') if ext.downcase != 'md'
-
-    warn('Not a Jekyll post')
-    puts 'NOCUSTOM'
-  end
+  process_jekyll(parts, 'Bunch')
 rescue StandardError => e
   puts 'NOCUSTOM'
   warn(e)
