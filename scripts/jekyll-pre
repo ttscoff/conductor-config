@@ -29,6 +29,9 @@ require 'erb'
 require 'logger'
 require 'nokogiri/nokogiri'
 
+$LOAD_PATH.unshift File.join("#{File.dirname(__FILE__)}/lib")
+require 'helpdocs'
+
 @logger = Logger.new(File.expand_path('~/logs/jekyllpre.log'))
 
 def class_exists?(class_name)
@@ -65,9 +68,6 @@ class String
 end
 
 def process_docs(content)
-  $LOAD_PATH.unshift '/Users/ttscoff/Desktop/Code/nvultra-docs/lib'
-  require 'helpdocs'
-
   content = content.render_liquid('marked')
   content = Utils.remove_todos(content)
   if ENV['MARKED_ORIGIN'] =~ /nvultra/
