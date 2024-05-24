@@ -2,20 +2,19 @@ tracks:
   - title: Preprocessing
     condition: phase is pre
     tracks:
-    - title: Bear Preview
-      condition: "text contains <!-- source: Bear.app -->"
-      sequence:
-        - script: bear
-      continue: true
     - title: MindNode map
       condition: filename ends with mindnode
-      script: mindnode
+      filter: setStyle(ink)
     - title: Obsidian Markdown document
       condition: tree contains .obsidian AND (extension is md OR extension is markdown)
       script: obsidian-md-filter
     - title: GitHub README
       condition: filename is README.md
-      script: github-pre
+      filter: setStyle(github)
+    - title: Bear Preview
+      condition: "text contains <!-- source: Bear.app -->"
+      sequence:
+        - script: bear
     - title: Blog post or Bunch docs
       condition: (path contains _drafts OR path contains _posts OR path contains /bunch/) AND has yaml
       script: jekyll-pre
