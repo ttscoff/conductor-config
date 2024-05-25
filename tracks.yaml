@@ -7,6 +7,8 @@ tracks:
       sequence:
         - filter: insertTitle
         - filter: insertScript(test.js)
+        - filter: prependFile(test_include.md)
+        - filter: insertTOC(3, h1)
     - title: MindNode map
       condition: filename ends with mindnode
       filter: setStyle(ink)
