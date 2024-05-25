@@ -2,6 +2,11 @@ tracks:
   - title: Preprocessing
     condition: phase is pre
     tracks:
+    - title: Test File
+      condition: filename is test.md
+      sequence:
+        - filter: insertTitle
+        - filter: insertScript(test.js)
     - title: MindNode map
       condition: filename ends with mindnode
       filter: setStyle(ink)
