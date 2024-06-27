@@ -14,7 +14,10 @@ tracks:
       filter: setStyle(ink)
     - title: Obsidian Markdown document
       condition: tree contains .obsidian AND (extension is md OR extension is markdown)
-      script: obsidian-md-filter
+      sequence:
+        - script: obsidian-md-filter
+        - script: obsidian-callouts
+        - filter: prependRaw(callouts.html)
     - title: GitHub README
       condition: filename is README.md
       filter: setStyle(github)
@@ -31,6 +34,9 @@ tracks:
   - title: Processing
     condition: phase is pro
     tracks:
+    - title: Confluence conversion
+      condition: path contains Confluence
+      command: markdown_py
     - title: TaskPaper file
       condition: ext is taskpaper OR text contains @taskpaper
       script: taskpaper
