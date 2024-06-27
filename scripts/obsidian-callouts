@@ -114,7 +114,7 @@ def template_input(m)
   @svg = SVG[@type.to_sym]
   @fold_svg = SVG[:fold]
 
-  @content.gsub!(/^ *>(.*?)(\n *>(.*?))+/) do |mtch|
+  @content.gsub!(/^ *>(.*?)(\n *>(.*?))+$/) do |mtch|
     mtch.split(/\n/).join("\n<br>\n")
   end
   @content.gsub!(/^\s*> +/, '')
