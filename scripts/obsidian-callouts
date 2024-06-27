@@ -3,8 +3,6 @@
 
 require 'erb'
 
-CALLOUT_RX = /(?mi)^(?<indent>(?:> +)+)\[!(?<type>note|abstract|summary|tldr|info|todo|tip|hint|important|success|check|done|question|help|faq|warning|caution|attention|failure|fail|missing|danger|error|bug|example|quote|cite|)\](?<foldable>-?)( +(?<title>[\s\S]*?))? *(\n|\Z)(?<content>(> [\s\S]*?(?:\n|\Z))*)/
-
 SVG = {
   fold: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-chevron-down"><path d="m6 9 6 6 6-6"></path></svg>',
   tip: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-flame"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>',
@@ -67,8 +65,9 @@ ENDTITLEHTML
 ## @return     [String] Processed callouts
 ##
 def process(input)
+  callout_rx = /(?mi)^(?<indent>(?:> +)+)\[!(?<type>note|abstract|summary|tldr|info|todo|tip|hint|important|success|check|done|question|help|faq|warning|caution|attention|failure|fail|missing|danger|error|bug|example|quote|cite|)\](?<foldable>-?)( +(?<title>[\s\S]*?))? *(\n|\Z)(?<content>(> [\s\S]*?(?:\n|\Z))*)/
   content = input
-  match_datas = content.to_enum(:scan, CALLOUT_RX).map { Regexp.last_match }
+  match_datas = content.to_enum(:scan, callout_rx).map { Regexp.last_match }
   match_datas.each do |m|
     orig = m[0]
     res = template_input(m)
@@ -79,7 +78,8 @@ def process(input)
 end
 
 def template_input(m)
-  @title = m['title'] || m['type'].capitalize
+  title = m['title'] || m['type'].capitalize
+
   @content = m['content'] ? process(m['content']) : m['content']
 
   @type = case m['type']
@@ -118,6 +118,7 @@ def template_input(m)
     mtch.split(/\n/).join("\n<br>\n")
   end
   @content.gsub!(/^\s*> +/, '')
+  @title = title
 
   template = if m['foldable'] == '-'
                ERB.new(FOLDABLE_HTML.dup)
@@ -126,7 +127,6 @@ def template_input(m)
              else
                ERB.new(TITLE_HTML.dup)
              end
-
   template.result
 end
 
