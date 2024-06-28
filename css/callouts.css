@@ -1,5 +1,3 @@
-<style>
-
 body {
   --bold-weight: 600;
   --bold-color: inherit;
@@ -336,4 +334,3 @@ body {
 .callout-fold.is-collapsed .svg-icon {
   transform: rotate(-90deg);
 }
-</style>

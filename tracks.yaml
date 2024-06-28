@@ -9,6 +9,7 @@ tracks:
         - filter: insertScript(test.js)
         - filter: prependFile(test_include.md)
         - filter: insertTOC(3, h1)
+        - filter: insertCSS(callouts)
     - title: MindNode map
       condition: filename ends with mindnode
       filter: setStyle(ink)
@@ -17,7 +18,7 @@ tracks:
       sequence:
         - script: obsidian-md-filter
         - script: obsidian-callouts
-        - filter: prependRaw(callouts.html)
+        - filter: insertCSS(callouts)
     - title: GitHub README
       condition: filename is README.md
       filter: setStyle(github)
