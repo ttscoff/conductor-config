@@ -97,7 +97,7 @@ class Vault
       convert_tags: config['convert_tags'] || false,
       obsidian_links: config['obsidian_links'] || false,
       convert_markdown_links: config['convert_markdown_links'] || false,
-      marked_processor: config['marked_processor'].downcase || 'discount'
+      marked_processor: config['marked_processor']&.downcase || 'discount'
     }
   end
 end
@@ -232,6 +232,8 @@ $stdin.readlines.each do |line|
       # Match []() style links and convert to Obsidian urls
       line.scan(/\[(?<label>.*?)\]\((?<note>[^#]+)(?:\.md)?(?<anchor>#.*?)?\)/) do
         m = Regexp.last_match
+        next if m['note'] =~ /^http/
+
         wikilink = m[0]
         label = m['label']
         link = m['note']

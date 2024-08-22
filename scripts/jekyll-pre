@@ -68,7 +68,7 @@ class String
 end
 
 def process_docs(content)
-  content = content.render_liquid('marked')
+  content = content.render_liquid(pdf: 'marked')
   content = Utils.remove_todos(content)
   if ENV['MARKED_ORIGIN'] =~ /nvultra/
     content.inject_meta!('Marked CSS: nvUltra')

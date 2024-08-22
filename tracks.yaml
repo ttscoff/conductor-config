@@ -2,14 +2,23 @@ tracks:
   - title: Preprocessing
     condition: phase is pre
     tracks:
+    - title: VoiceOver test
+      condition: filename is wrap_em.md
+      script: wrap_em.sh
     - title: Test File
-      condition: filename is test.md
+      condition: filename ends with test.md
       sequence:
-        - filter: insertTitle
-        - filter: insertScript(test.js)
-        - filter: prependFile(test_include.md)
-        - filter: insertTOC(3, h1)
+        # - filter: insertCSS(https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css)
+        # - filter: insertScript(https://unpkg.com/mermaid@10/dist/mermaid.min.js)
+        - filter: autoLink()
+        - filter: insertTitle(yes)
+        - filter: fixHeaders
+        # - filter: insertScript(test.js)
+        # - filter: prependFile(test_include.md)
+        # - filter: insertTOC(3, h1)
         - filter: insertCSS(callouts)
+        # - filter: insertTOC()
+        - filter: setMeta(processor, gfm)
     - title: MindNode map
       condition: filename ends with mindnode
       filter: setStyle(ink)
@@ -18,7 +27,7 @@ tracks:
       sequence:
         - script: obsidian-md-filter
         - script: obsidian-callouts
-        - filter: insertCSS(callouts)
+        - filter: insertStylesheet(callouts)
     - title: GitHub README
       condition: filename is README.md
       filter: setStyle(github)
@@ -35,9 +44,22 @@ tracks:
   - title: Processing
     condition: phase is pro
     tracks:
+    # - title: Test File including linktest.md
+    #   condition: includes contains file linktest.md
+    #   command: echo NOCUSTOM
+    - title: Test file
+      condition: filename ends with test.md
+      sequence:
+        - filter: fixHeaders()
+        - filter: removeMeta()
+        # - command: cmark-gfm -e table -e footnotes -e strikethrough -e tasklist
+        - command: kramdown
+    - title: Obsidian Markdown document
+      condition: tree contains .obsidian AND (extension is md OR extension is markdown)
+      command: echo "MMD"
     - title: Confluence conversion
       condition: path contains Confluence
-      command: markdown_py
+      command: markdown_py -x extra
     - title: TaskPaper file
       condition: ext is taskpaper OR text contains @taskpaper
       script: taskpaper
@@ -52,4 +74,5 @@ tracks:
       script: bunch-post
     - title: nvUltra or Marked docs
       condition: path contains HelpDocs OR path contains Code/nvultra-docs
-      command: multimarkdown
+      sequence:
+        - command: echo MMD

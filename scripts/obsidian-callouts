@@ -69,8 +69,14 @@ include Callouts
 ## @return     [String] Processed callouts
 ##
 def process(input)
-  callout_rx = /(?mi)^(?<indent>(?:> +)+)\[!(?<type>note|abstract|summary|tldr|info|todo|tip|hint|important|success|check|done|question|help|faq|warning|caution|attention|failure|fail|missing|danger|error|bug|example|quote|cite|)\](?<foldable>-?)( +(?<title>[\s\S]*?))? *(\n|\Z)(?<content>(> [\s\S]*?(?:\n|\Z))*)/
-  content = input
+  callout_rx = /(?mix)
+    ^(?<indent>(?:>\s*)+)\[!
+      (?<type>note|abstract|summary|tldr|info|todo|tip|hint|important|success|
+      check|done|question|help|faq|warning|caution|attention|failure|fail|
+      missing|danger|error|bug|example|quote|cite|)
+      \](?<foldable>-?)(\s+(?<title>[\s\S]*?))?\s*(\n|\Z)
+      (?<content>(>\s[\s\S]*?(?:\n|\Z))*)/
+  content = input.force_encoding('utf-8')
   match_datas = content.to_enum(:scan, callout_rx).map { Regexp.last_match }
   match_datas.each do |m|
     orig = m[0]
@@ -86,9 +92,7 @@ def template_input(m)
 
   content = m['content'] ? process(m['content']) : m['content']
 
-  @type = case m['type']
-          when /note/
-            'note'
+  @type = case m['type'].downcase
           when /(abstract|summary|tldr)/
             'abstract'
           when /info/
@@ -113,6 +117,8 @@ def template_input(m)
             'example'
           when /(quote|cite)/
             'quote'
+          else
+            'note'
           end
 
   content.gsub!(/^ *>(.*?)(\n *>(.*?))+$/) do |mtch|

@@ -352,6 +352,8 @@ def no_custom(reason)
 end
 
 def process_jekyll(parts, style = 'Bunch')
+  return parts.join("\n") if parts[1].nil?
+
   # full path to image folder
   full_image_path = '/Users/ttscoff/Sites/dev/bunch/'
   base_url = '/Users/ttscoff/Sites/dev/bunch'

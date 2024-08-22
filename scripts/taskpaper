@@ -47,7 +47,7 @@ def process_taskpaper(content)
       end
     end
     final = header.nil? ? '' : "#{header.join("\n")}\n\n"
-    final.gsub!(/\|/, '\|')
+    final = final.gsub(/\|/, '\|')
     style = <<~EOSTYLE
       <style>
       li.project {
